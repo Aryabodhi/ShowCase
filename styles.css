@@ -898,6 +898,23 @@ a {
     font-weight: 600;
 }
 
+.quote footer a {
+    color: inherit;
+}
+
+.quote p {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 7;
+    overflow: hidden;
+}
+
+.reviews-credit {
+    margin: 1rem 0 0;
+    color: var(--mist);
+    font-size: 0.85rem;
+}
+
 .quote-sample {
     border-style: dashed;
 }

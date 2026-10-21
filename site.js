@@ -9,14 +9,26 @@
     mapQuery: "i-Expert Kasturba Road Chandrapur Maharashtra",
     googleUrl: "https://share.google/Hse1YJZSvR1mBke1q",
     googlePlaceId: "",
-    // Leave empty until you copy the real number from the Google listing.
-    rating: "",
-    reviewCount: "",
-    // Replace these with real reviews copied from Google, then set sample: false.
+    // Google Maps Platform key with only "Places API (New)" enabled and an HTTP-referrer restriction to
+    // the site's domain, because it ships in this file. When set, the live Google rating and reviews
+    // replace the values below; without googlePlaceId the shop is looked up by mapQuery.
+    googleApiKey: "",
+    // Shown when googleApiKey is empty or the Google request fails. Copy these from the Google listing:
+    // rating as shown there ("4.9"), reviewCount as a plain number ("212").
+    rating: "4.3",
+    reviewCount: "9",
+    // Real reviews copied from the Google listing, one entry each, newest first. Three fill one row on desktop.
+    // url (the reviewer's Google profile link) and when ("2 months ago") are optional; leave them "" to skip.
+    // Copy the text word for word, and keep quotes inside it escaped as \".
+    // Copied 2026-10-21. The three 5-star reviews on the listing are rating-only, so they have no entry here.
     reviews: [
-      { author: "Customer name", stars: 5, sample: true, text: "Front glass on my iPhone was shattered. Fixed the same evening and it looks new." },
-      { author: "Customer name", stars: 5, sample: true, text: "Sent a photo on WhatsApp, got the price straight away. No surprises at pickup." },
-      { author: "Customer name", stars: 5, sample: true, text: "Back glass replaced cleanly. Camera and wireless charging work fine." },
+      // { author: "Reviewer name", stars: 5, when: "2 months ago", url: "", text: "Review text from Google." },
+      { author: "Ujwal Amte", stars: 4, when: "", url: "https://www.google.com/maps/contrib/106287906740976790246/reviews", text: "“Very impressed and will definitely recommend your services to others.Went there to repair iPhone 7 Plus audio IC .. they have done very nicely and quickly..  will see how long it last…" },
+      { author: "Imran Sayyed", stars: 4, when: "", url: "https://www.google.com/maps/contrib/108754724574189929545/reviews", text: "Had a great experience visiting the store — it felt very genuine and trustworthy" },
+      { author: "GOKUL PARDHI", stars: 4, when: "", url: "https://www.google.com/maps/contrib/112023316160628222360/reviews", text: "Best service and fast service 😀😃" },
+      { author: "Anil Kolhe", stars: 4, when: "", url: "https://www.google.com/maps/contrib/110285997168563612552/reviews", text: "Good service ☺️" },
+      { author: "Vikash Kumar Mahto", stars: 4, when: "", url: "https://www.google.com/maps/contrib/102199033664736859461/reviews", text: "My phone was getting not getting charged,they just removed the dust and it started getting charged without any charge .Thank you" },
+      { author: "Jayshree Pandhare", stars: 4, when: "", url: "https://www.google.com/maps/contrib/101707022488808474334/reviews", text: "Fast and geniune work" },
     ],
   };
 
@@ -116,19 +128,77 @@
     return s;
   }
 
-  function renderReviews() {
+  // Google reviews per site language, kept in memory only: the Places terms do not allow storing them.
+  var googleReviews = {};
+
+  function fetchGoogleReviews(language) {
+    var fields = ["rating", "userRatingCount", "reviews"];
+    var base = "https://places.googleapis.com/v1/";
+    var request = CONFIG.googlePlaceId
+      ? fetch(base + "places/" + encodeURIComponent(CONFIG.googlePlaceId) + "?languageCode=" + language, {
+          headers: { "X-Goog-Api-Key": CONFIG.googleApiKey, "X-Goog-FieldMask": fields.join(",") },
+        })
+      : fetch(base + "places:searchText", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": CONFIG.googleApiKey,
+            "X-Goog-FieldMask": fields.map(function (f) { return "places." + f; }).join(","),
+          },
+          body: JSON.stringify({ textQuery: CONFIG.mapQuery, languageCode: language, pageSize: 1 }),
+        });
+    return request
+      .then(function (res) {
+        if (!res.ok) throw new Error("Places API " + res.status);
+        return res.json();
+      })
+      .then(function (data) {
+        var place = CONFIG.googlePlaceId ? data : (data.places || [])[0];
+        if (!place) throw new Error("Shop not found on Google");
+        return {
+          rating: place.rating ? place.rating.toFixed(1) : "",
+          reviewCount: place.userRatingCount ? String(place.userRatingCount) : "",
+          reviews: (place.reviews || [])
+            .filter(function (r) { return r.text && r.text.text; })
+            .map(function (r) {
+              var who = r.authorAttribution || {};
+              return { author: who.displayName || "", url: who.uri || "", when: r.relativePublishTimeDescription || "", stars: r.rating || 0, text: r.text.text };
+            }),
+        };
+      });
+  }
+
+  function loadReviews() {
+    if (!CONFIG.googleApiKey) {
+      renderReviews(CONFIG);
+      return;
+    }
+    var language = lang;
+    if (!googleReviews[language]) {
+      googleReviews[language] = fetchGoogleReviews(language).catch(function (err) {
+        console.warn("Google reviews unavailable:", err);
+        return null;
+      });
+    }
+    googleReviews[language].then(function (data) {
+      if (language === lang) renderReviews(data || CONFIG, !!data);
+    });
+  }
+
+  function renderReviews(data, fromGoogle) {
     var rating = document.getElementById("reviews-rating");
-    if (rating && CONFIG.rating) {
-      rating.hidden = false;
-      rating.innerHTML =
-        '<span class="rating-num">' + CONFIG.rating + "</span>" +
-        '<span class="rating-stars" aria-hidden="true">' + stars(Math.round(parseFloat(CONFIG.rating))) + "</span>" +
-        '<span class="rating-meta">' + (CONFIG.reviewCount ? CONFIG.reviewCount + " " : "") + "Google</span>";
+    if (rating) {
+      rating.hidden = !data.rating;
+      rating.innerHTML = data.rating
+        ? '<span class="rating-num">' + data.rating + "</span>" +
+          '<span class="rating-stars" aria-hidden="true">' + stars(Math.round(parseFloat(data.rating))) + "</span>" +
+          '<span class="rating-meta">' + (data.reviewCount ? data.reviewCount + " " : "") + "Google</span>"
+        : "";
     }
     var list = document.getElementById("reviews-list");
     if (!list) return;
     list.innerHTML = "";
-    CONFIG.reviews.forEach(function (r) {
+    data.reviews.forEach(function (r) {
       var q = document.createElement("blockquote");
       q.className = "quote" + (r.sample ? " quote-sample" : "");
       var flag = r.sample ? '<span class="sample-flag">' + t("reviews.sample") + "</span>" : "";
@@ -137,9 +207,20 @@
         '<span class="quote-stars" aria-label="' + r.stars + ' / 5">' + stars(r.stars) + "</span>" +
         "<p></p><footer></footer>";
       q.querySelector("p").textContent = r.text;
-      q.querySelector("footer").textContent = r.author;
+      var footer = q.querySelector("footer");
+      var author = document.createElement(r.url ? "a" : "span");
+      author.textContent = r.author;
+      if (r.url) {
+        author.href = r.url;
+        author.target = "_blank";
+        author.rel = "noopener noreferrer";
+      }
+      footer.appendChild(author);
+      if (r.when) footer.appendChild(document.createTextNode(" · " + r.when));
       list.appendChild(q);
     });
+    var credit = document.getElementById("reviews-credit");
+    if (credit) credit.hidden = !fromGoogle;
   }
 
   function updateMap() {
@@ -304,14 +385,14 @@
     lang = window.IExpertI18n ? window.IExpertI18n.init() : "en";
     initBooking();
     wireContact();
-    renderReviews();
+    loadReviews();
     updateMap();
     initCompare();
     syncCanonical();
     document.addEventListener("iexpert:lang", function (ev) {
       lang = ev.detail.lang;
       syncCanonical();
-      renderReviews();
+      loadReviews();
       updateMap();
     });
   });
